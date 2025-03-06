@@ -1,0 +1,341 @@
+---
+title: "R_code_version&summary"
+format: html
+editor: visual
+---
+
+**Tidy Part**
+
+```{r}
+library(ggplot2)
+library(rnaturalearth)
+library(sf)
+library(fmsb)
+library(dplyr)
+library(corrplot)
+library(tidyr)
+library(readr)
+library(stringr)
+library(nycflights13)
+library(fivethirtyeight)
+library(rnaturalearthdata)
+library(moderndive)
+library(gapminder)
+library(skimr)
+library(countrycode)
+library(knitr)
+library(gt)
+library(tibble)
+```
+
+All the packages we have used for tidy,version and summary.
+
+```{r}
+humanright<- read.csv("humanrights.csv")
+gdp<-read.csv("gdp-per-capita-.csv")
+develop<-read.csv("human-development-index(only2022).csv")
+age<-read.csv("median-age Structure.csv")
+labor<-read.csv("ratio-of-female-to-male-labor-force-participation-rates-ilo-wdi.csv")
+corruption<-read.csv("ti-corruption-perception-index(2018).csv")
+urban<-read.csv("urbanization.csv")
+```
+
+Read all the datasets from the website.
+
+```{r}
+data2023<- humanright %>% 
+  filter(Year=="2023") %>% 
+  left_join(gdp, by = "Entity") %>%
+  left_join(develop, by = "Entity") %>%
+  left_join(age, by = "Entity") %>%
+  left_join(labor, by = "Entity") %>%
+  left_join(corruption, by = "Entity") %>%
+  left_join(urban, by = "Entity")%>%
+  rename(
+    country = Entity,
+    iso_a3 = Code,
+    human_rights_index=Civil.liberties.index..best.estimate..aggregate..average.,
+    GDP = GDP.per.capita..PPP..constant.2021.international...,
+    Develop=Human.Development.Index,
+    Age=Median.age...Sex..all...Age..all...Variant..estimates,
+    Labor=Ratio.of.female.to.male.labor.force.participation.rate......modeled.ILO.estimate.,
+    Corruption=Corruption.Perception.Index...Transparency.International..2018.,
+    Urban=Urban.population....of.total.population.
+  )
+```
+
+Filter out all the data for 2023 and combine it into one table,and rename all the variables.
+
+```{r}
+data2023$Continent <- countrycode(data2023$iso_a3, origin = "iso3c", destination = "continent")
+explain_variety <- subset(data2023[,4:10]) 
+explain_variety_clean <- na.omit(explain_variety)
+data2023_clean<- na.omit(data2023)
+vars_to_scale <- c("GDP","Develop" ,"Age" ,"Labor", "Corruption", "Urban")  
+# Copy original data
+data2023_clean_scaled <- data2023_clean  
+# Standardizes the specified variable
+data2023_clean_scaled[vars_to_scale] <- scale(data2023_clean[vars_to_scale])  
+```
+
+Clean and standardize data
+
+```{r}
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# National Center for Computing Geometry
+world <- world %>%
+  mutate(center = st_centroid(geometry)) %>%
+  mutate(lat = st_coordinates(center)[,2], lon = st_coordinates(center)[,1]) %>%
+  select(iso_a3, lat, lon)
+
+# Merge your data with national center coordinates
+df_with_coords <- data2023_clean %>%
+  left_join(world, by = "iso_a3")
+
+data_final<- df_with_coords[,1:13]
+write.csv(data_final,"data2.csv")
+```
+
+Interest 2 Data preparation and processing
+
+**Version Part**
+
+```{r}
+# Plot scatter plot matrix
+cor_matrix <- cor(explain_variety_clean)
+corrplot(cor_matrix, method = "color", type = "upper", 
+         tl.col = "black", tl.srt = 45, addCoef.col = "black")
+```
+
+This graph is a correlation heatmap, Used to show the correlation among variables such as human_rights_index, GDP, Develop, Age, Labor, Corruption, and Urban.
+
+Correlation Coefficient: The correlation coefficient ranges from -1 to 1: 1 indicates a completely positive correlation (the darkest blue). -1 indicates a perfect negative correlation (the deepest red). 0 means no correlation (the color is close to white).
+
+Color: Dark blue indicates a strong positive correlation (close to 1). White indicates no correlation (near 0). Red indicates a negative correlation (close to -1).
+
+human_rights_index Relevance: Positive correlation with Corruption (0.59) : indicates that where the human rights index is high, corruption is also likely to be high. Positive correlation with development (0.41) : where the level of development is high, the human rights index is also likely to be high. Positive correlation with GDP (0.35) : Regions with better economic development may have higher human rights index.
+
+```{r}
+# Geographic visualization
+# Get world map data
+world <- ne_countries(scale = "medium", returnclass = "sf")
+# Merge Human Rights Index data
+world <- left_join(world, data2023, by = "iso_a3")
+ggplot(data = world) +
+  geom_sf(aes(fill = human_rights_index), color = "black", size = 0.1) +
+  scale_fill_gradient(low = "yellow", high = "red", na.value = "grey", name = "Human Rights Index") +
+  theme_minimal() +
+  labs(title = "Human Rights Index, 2023",
+       caption = "Data Source: V-Dem / Our World in Data") +
+  theme(legend.position = "bottom")
+```
+
+This is a world map from the 2023 Human Rights Index, which shows how different countries are performing on human rights.
+
+Color and data Meaning: Color represents the Human Rights Index Yellow (around 0.25) → A high human rights index indicates that these countries have a good human rights situation. Orange (around 0.50) → Average human rights index. Red (near 0.75) → A low human rights index indicates a poor human rights situation in these countries. Color gradient: The darker the color (toward red), the lower the human rights index, that is, the worse the human rights situation; The lighter the color (towards yellow), the higher the human rights index, that is, the better the human rights situation.
+
+Data source: The data source for this chart is V-Dem/Our World in Data, which typically use a variety of indicators (such as freedom of expression, judicial independence, political oppression, etc.) to measure human rights.
+
+Conclusion: The map shows the geographical distribution of the global human rights index. It can be seen that economically developed countries (e.g. North America, parts of Europe) tend to have high human rights indexes, while developing countries or regions with political instability (e.g. Africa, South America, the Middle East) tend to have relatively low human rights indexes. Democratic countries tend to have high human rights scores, while authoritarian or politically unstable countries have low human rights scores. Poverty, conflict, corruption, religion or ethnicity may also affect the human rights situation in countries.
+
+```{r}
+# Correlation analysis [Scatter Plot + linear regression]
+ggplot(data2023_clean_scaled, aes(x = human_rights_index, y = GDP)) +
+  geom_point(aes(color = Corruption)) +
+  geom_smooth(method = "lm") +
+  theme_minimal() +
+  labs(title = "Relationship between GDP and Human Rights Index")
+```
+
+This scatter plot shows the relationship between GDP (vertical axis) and the human Rights Index (horizontal axis: human rights Index), taking into account the level of Corruption (color shade) as an additional variable.
+
+Chart information: X axis: represents the human rights index, the higher the value, the better the human rights situation. Y-axis: Gross Domestic Product (GDP), a higher value indicates a higher level of the economy. Color: Dark for low corruption, light for high corruption.
+
+Overall trend: This graph shows a positive correlation between the human rights index and GDP, that is, countries with higher human rights indexes tend to have higher GDP. This regression line (blue line) shows a slight upward trend, indicating that when the human rights index increases, GDP also tends to rise, but the correlation is not very strong. The distribution of data points shows that most countries have lower GDP at low HRI (\<0.5), but GDP becomes higher at high HRI (\>0.75), especially with some high-value countries in the upper right corner.
+
+The effects of corruption: The shade represents the degree of corruption: The lighter the color (blue is lighter), the higher the degree of corruption. The darker the color (close to black), the less corrupt. Observe the trend: Countries with high levels of corruption (bright blue) are concentrated in regions with low GDP and low human rights indices (bottom left). Countries with low corruption (dark color) are mainly located in regions with high GDP and high human rights index (top right). Countries with lower levels of corruption generally have better human rights and higher GDP.
+
+Conclusion: Countries with higher human rights indices usually have higher levels of economic development (higher GDP), but this relationship is not absolute. Corruption level is related to Human Rights Index and GDP: Countries with high levels of corruption (bright blue) tend to have lower human rights indices and lower GDP. Countries with low corruption (dark colors) tend to have higher human rights indices and higher GDP. This graph reveals the complex relationship between human rights, economic development and corruption, but there are still many outliers, such as countries with high GDP despite a low human rights index (such as resource-rich countries), or countries with high human rights index but not high GDP (perhaps countries with partially developed but small economies).
+
+```{r}
+# Distributed visual box plot
+ggplot(data2023_clean_scaled, aes(x = Continent, y = human_rights_index, fill = Continent)) +
+     geom_boxplot() +
+     theme_minimal() +
+     labs(title = "Human Rights Index Distribution by Continent")
+```
+
+This box plot shows the distribution of human rights indices by continent, which can help us compare the human rights situation in different regions.
+
+Axis and data interpretation: X axis: represents different continents, including Africa, the Americas, Asia, Europe and Oceania. Y-axis: indicates the human rights index, the higher the value, the better the human rights situation. Each box plot represents the distribution of the human rights index for the continent: Black center line: Indicates the median of the continent's human rights index. IQR, quartile Range: Shows the range of the human rights Index for 50% of the countries on the continent. Whiskers: Indicates the data distribution within the normal range (usually 1.5 times IQR). Black dots: outliers, indicating that some countries in the continent are significantly higher or lower on the human rights index.
+
+Comparison of human rights indices by continent: Europe The human rights index is the highest, with a median of nearly 0.9 and a narrow quartile range, indicating that the human rights situation in European countries is relatively stable and the differences are small. A few outliers (low countries) may be Eastern Europe or some special countries. Oceania The human rights index is also high, with a median of nearly 0.85, which is close to Europe. However, the gap between the quartiles is slightly larger, indicating that some countries have slightly lower human rights index. America The median is higher (approximately 0.75), but the distribution is wider than in Europe and Oceania, indicating a larger gap in the human rights index between countries in the Americas. There are some low outliers, which may be countries with poor human rights conditions (such as some Latin American countries). Africa The human rights index is widely distributed, with a median of about 0.6, lower than in the Americas. Some countries have a high human rights index (close to 0.8), but most are low, even close to 0.25. It shows that the human rights index of African countries varies greatly, and the human rights situation of some countries is poor. Asia The human rights index showed the largest change, with a median of about 0.5 and a range from near 0 to 1, indicating that the human rights situation in Asian countries is highly polarized. There are more outliers, which may be some countries with extremely bad or extremely good human rights conditions.
+
+Conclusion: The overall human rights situation in Europe and Oceania is relatively good and the distribution is relatively stable. The human rights situation in the Americas varies greatly, with some countries having low human rights indices. There is a wide gap between human rights indices in Africa and Asia, with some countries having poor human rights performance. The human rights index is most widely distributed in Asia, which means that the human rights situation in the region is the most uneven.
+
+```{r}
+# Radar map
+# Calculate the mean for each continent
+continent_avg <- data2023_clean_scaled %>%
+  group_by(Continent) %>%
+  summarise(
+    human_rights_index = mean(human_rights_index, na.rm = TRUE),
+    GDP = mean(GDP, na.rm = TRUE),
+    Develop = mean(Develop, na.rm = TRUE),
+    Age = mean(Age, na.rm = TRUE),
+    Labor = mean(Labor, na.rm = TRUE),
+    Corruption = mean(Corruption, na.rm = TRUE),
+    Urban = mean(Urban, na.rm = TRUE)
+  )
+# Select the continent to compare
+selected_continents <- c("Asia", "Europe", "Africa", "Americas","Oceania")
+# Filter the data to keep only the selected continents
+radar_data <- continent_avg %>%
+  filter(Continent %in% selected_continents) %>%
+  select(-Continent)
+# Set the maximum/minimum value
+max_min <- data.frame(
+  human_rights_index = c(1, -1),
+  GDP = c(1, -1),
+  Develop = c(1, -1),
+  Age = c(1, -1),
+  Labor = c(1, -1),
+  Corruption = c(1, -1),
+  Urban = c(1, -1)
+)
+# Merge Max/min data
+radar_data <- rbind(max_min, radar_data)
+# Color list
+colors <- c("red", "blue", "green", "purple","pink")
+fill_colors <- c(rgb(1, 0, 0, 0.3), rgb(0, 0, 1, 0.3), rgb(0, 1, 0, 0.3), rgb(0.5, 0, 0.5, 0.3))
+# Output radar map
+radarchart(radar_data,
+           axistype = 2,              
+           pcol = colors,              
+           pfcol = fill_colors,       
+           plwd = 2,                   
+           cglcol = "grey",          
+           cglty = 1,                   
+           axislabcol = "black",       
+           vlcex = 1,
+           caxislabels = seq(-1, 1, 0.5),
+           title = "Comparison of Different Continents") 
+#Add legend
+legend("topright", legend = selected_continents, col = colors, lty = 1, lwd = 2, bty = "n")
+```
+
+This is a Radar Chart (Radar Chart/Spider Chart) to compare the performance of different continents on multiple variables.
+
+Variables: Each axis of the radar map represents a variable, including: human_rights_index, GDP, Develop, Age, Labor, Urban, Corruption, Different colors represent different continents: (red, Asia), (Europe, Europe) , (Africa, Africa), (Americas, America), (Oceania, Australia)
+
+Conclusion: Europe performs better on most indicators, with a developed economy, high human rights scores, high levels of urbanization, and low levels of corruption. The Americas are close to Europe, but the corruption index is slightly higher and the overall level of development is still higher. Asia has uneven economic development, high labor force index, but high corruption index and low human rights index. Africa as a whole performs poorly, with low human rights, GDP, urbanization and high corruption. Oceania's performance on a number of indicators is moderately above average and relatively stable.
+
+**Summary part**
+
+```{r}
+data2<-read.csv("data2.csv")
+# Calculate descriptive statistics of the overall data
+summary_df <- as.data.frame(summary(data2))
+# Reformat the data frame to fit gt
+summary_table <- summary_df %>%
+  rownames_to_column(var = "Statistic") %>%
+  gt() %>%
+  tab_header(title = "Summary Statistics of the overall data") %>%
+  cols_label(Statistic = "Variable") %>%
+  fmt_number(columns = where(is.numeric), decimals = 2)
+
+summary_table
+```
+
+-   *The analysis for the overall data：*
+
+Data general characteristics: The data set covers 163 countries, including human rights, economy, corruption, development, and population. Some variables have missing values, but the overall data structure is intact. There are large differences in variables such as economy and corruption, indicating that there are significant differences in economic and governance levels among countries. Population, age and other variables are evenly distributed, which is more in line with the global population distribution trend.
+
+The human rights Index ranges from 0.053 to 0.962, indicating that the human rights index varies widely from country to country. The median (0.792) is greater than the mean (0.6812), indicating that the data may be right-skewed (more countries have lower human rights indices).
+
+The mean GDP (25,469.4) is larger than the median (15,855.3), indicating that the GDP data is skewed to the right, i.e. a few countries have very high GDP (such as the United States). The country with the highest GDP reached US \$132,846.6, while the country with the lowest GDP was only US \$828.9, indicating a wide gap in economic development among countries.
+
+The development index range is small (0.38-0.967), and the mean (0.7219) is close to the median (0.742), indicating that the data distribution is relatively uniform The median age (29.15 years) and the mean (29.61 years) are similar, indicating that the data are roughly symmetrical.
+
+The age range is large (14.32-48.96) and may cover both developed countries (aging) and developing countries (large young population).
+
+A female labor force participation rate score greater than 100% May indicate that the labor force participation rate is calculated in a special way (including part-time work, etc.). Labour force participation rates are high (between 64% and 86% in most countries). A lower corruption index indicates a lower level of corruption.
+
+The highest corruption index is 88 and the lowest is 10, indicating that the degree of integrity varies greatly between countries.
+
+Urbanization rate: Some countries are fully urbanized (100%). The degree of urbanization is high (mean 60.85%), but in some countries it is low (only 13.72%). Geographic information Latitude (lat) : Range -41.702 to 66.032 Longitude (lon) : Range -103.630 to 172.921 .
+
+These values show the geographical distribution of countries, including countries from the Southern Hemisphere (negative latitude) to the Northern Hemisphere (positive latitude).
+
+```{r}
+# Key statistics are calculated by Continent
+continent_summary1 <- data2 %>%
+  group_by(Continent) %>%
+  summarise(
+    Mean_HRI = mean(human_rights_index, na.rm = TRUE), 
+    Median_HRI = median(human_rights_index, na.rm = TRUE), 
+    Mean_GDP = mean(GDP, na.rm = TRUE),  
+    Median_GDP = median(GDP, na.rm = TRUE),
+    Mean_Develop = mean(Develop, na.rm = TRUE),  
+    Median_Develop = median(Develop, na.rm = TRUE), 
+    Mean_Age = mean(Age, na.rm = TRUE),  
+    Median_Age = median(Age, na.rm = TRUE), 
+  )
+# Reformat the data frame to fit gt
+table1 <- continent_summary1 %>%
+  gt() %>%
+  tab_header(title = "Descriptive Statistics by Continent (Part 1)") %>%
+  fmt_number(columns = 2:8, decimals = 2)
+table1
+```
+
+-   *Descriptive Statistics by Continent (Part 1)*
+
+    The table shows the mean and median of the five continents on the human rights Index, GDP, development index, average age and other variables.
+
+    Human Rights Index: Europe (0.88) and Oceania (0.88) have the highest human rights index, indicating that these regions as a whole enjoy better civil rights and freedoms. The Americas (0.80) are close behind, but slightly below Europe and Oceania. Africa (0.60) and Asia (0.51) had the lowest human rights index, especially in Asia, indicating that some countries were weak in civil rights. The median HRI is slightly above the mean, indicating that the data may be slightly skewed to the left (some countries have particularly low HRI pulling down the mean).
+
+    GDP: Europe has the highest GDP, with an average GDP of \$51,513.36, far exceeding other continents. The average GDP of Asia is \$26,508.80, and the median is \$16,067.45, indicating that some Asian countries (such as Japan, China and South Korea) have high GDP, but the median is relatively low, indicating that the economic development in Asia is unbalanced. GDP is also higher in the Americas, but not as high as in Europe and Asia. Africa has the lowest GDP, with an average of \$6,285.30 and a median of \$3,721.22, indicating that most countries are lagging behind in economic development. Oceania's GDP imbalance is as high as \$23,641.26 on average, but only \$4,174.44 on median, indicating that a few rich countries (such as Australia) have pulled up the mean.
+
+    Development Index: Europe has the highest development index (mean 0.89, median 0.90), indicating a high level of overall development. The Americas and Asia are similar (0.76 and 0.75), but still significantly lower than Europe. Africa has the lowest development index (mean 0.56), reflecting its low level of socio-economic development. Oceania has a mean of 0.73 but a median of 0.61, indicating that the data is unevenly distributed, possibly driven higher by Australia and New Zealand.
+
+    Average age: The highest age in Europe (mean 41.84), indicating a serious ageing population. The Americas (30.39) and Asia (29.85) are similar in age but younger than Europe. Africa is the youngest (mean 20.09, median 18.73), reflecting the region's younger demographics, which may be related to higher birth rates. Oceania data vary widely (mean 27.55 versus median 22.34), which may be pulled up by countries such as Australia.
+
+    Conclusion: Europe leads on all socio-economic indicators (highest HRI, GDP, development index). The economies of the Americas and Asia are stronger, but there is still a big gap, and the development within Asia is unbalanced. Africa has the lowest socio-economic development, with low GDP, development index and per capita age, indicating that it is still in the early stages of development. Oceania data are unevenly distributed, with large differences in GDP, development index and age, which may be influenced by individual countries.
+
+    ```{r}
+    # Key statistics are calculated by Continent
+    continent_summary2 <- data2 %>%
+      group_by(Continent) %>%
+      summarise(
+        Mean_HRI = mean(human_rights_index, na.rm = TRUE),  
+        Median_HRI = median(human_rights_index, na.rm = TRUE),  
+        Mean_Labor = mean(Labor, na.rm = TRUE), 
+        Median_Labor = median(Labor, na.rm = TRUE), 
+        Mean_Corruption = mean(Corruption, na.rm = TRUE), 
+        Median_Corruption = median(Corruption, na.rm = TRUE),
+        Mean_Urban = mean(Urban, na.rm = TRUE), 
+        Median_Urban = median(Urban, na.rm = TRUE), 
+      )
+    # Reformat the data frame to fit gt
+    table2 <- continent_summary2 %>%
+      gt() %>%
+      tab_header(title = "Descriptive Statistics by Continent (Part 2)") %>%
+      fmt_number(columns = 2:8, decimals = 2)
+    table2
+    ```
+
+<!-- -->
+
+-   *Descriptive Statistics by Continent (Part 2)*
+
+    The table shows the mean and median of the five continents on variables such as human rights index, labor participation rate, corruption index and urbanization rate. Human Rights Index: This section has already been discussed in Part 1 and will not be repeated here.
+
+    Labour force participation rate: Oceania has the highest Labour force participation rate (average 88.76%), indicating an active Labour market. It is also high in Europe (82.28%), where the job market is healthier. Labor participation rates are relatively high in Africa (74.32%) and the Americas (71.45%), but still lower than in Europe and Oceania. Asia is the lowest (61.84%), which may be influenced by the demographic structure, level of economic development and labor market policies of some countries. In Africa, the median (81.35%) is much higher than the average (74.32%), indicating that some countries have particularly low labor force participation rates, which drag down the overall average.
+
+    Corruption Index (a higher corruption index indicates a lower level of corruption and reproduction indicates a higher level of corruption) : Europe has the highest corruption index (60.45), followed by Oceania (56.40), indicating a higher level of corruption (low level of corruption) in these regions. The Americas (41.88) and Asia (39.34) are in the middle, but still less corrupt than Africa. Africa has the lowest corruption index (32.35), meaning it has the highest level of corruption. Oceania has a mean of 56.40 but a median of 46.00, indicating that the data are unevenly distributed and some countries may have lower corruption indices while others have higher ones.
+
+    Urbanization rate: Europe has the highest urbanization rate (mean 73.11%, median 73.53%), indicating that Europe has a large proportion of urban population. The Americas (70.07%) are next, with a higher degree of urbanization. Asia (60.67%) is lower than the Americas, but still higher, indicating a faster urbanization process. Africa (48.62%) and Oceania (47.87%) have the lowest rates of urbanization. The median for Oceania (26.04%) is much lower than the mean (47.87%), indicating that urbanization is extremely uneven, possibly due to higher urbanization in countries such as Australia and New Zealand and lower urbanization in other countries.
+
+    Conclusions: The labor participation rate was highest in Oceania (88.76%) and lowest in Asia (61.84%). Corruption Index: Europe and Oceania are the least corrupt, while Africa is the most corrupt (lowest index). Urbanization rates: highest in Europe (73.11%) and the Americas (70.07%), lowest in Africa (48.62%) and Oceania (47.87%). The data for Oceania are unevenly distributed, especially in the urbanization rate and the corruption index, where the median is far from the mean.
